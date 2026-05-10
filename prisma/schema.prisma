@@ -1,0 +1,249 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // Direct URL for migrations (required when using connection poolers like Supabase)
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Users & Auth ─────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String?
+  image        String?
+  role         String   @default("STUDENT") // STUDENT | TEACHER | ADMIN
+  phone        String?
+  bio          String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts           Account[]
+  sessions           Session[]
+  taughtCourses      Course[]             @relation("TeacherCourses")
+  enrollments        Enrollment[]
+  assessmentSessions AssessmentSession[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Courses ──────────────────────────────────────────────────────
+
+model Course {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  category    String   @default("GENERAL") // DANCE | SPORTS | REHABILITATION | GENERAL
+  thumbnail   String?
+  teacherId   String
+  teacher     User     @relation("TeacherCourses", fields: [teacherId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  enrollments     Enrollment[]
+  standardMotions StandardMotion[]
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  studentId String
+  courseId  String
+  createdAt DateTime @default(now())
+
+  student User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course  Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, courseId])
+}
+
+// ─── Standard Motions (标准动作库) ─────────────────────────────────
+
+model StandardMotion {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  category      String   @default("GENERAL")
+  difficulty    String   @default("BEGINNER") // BEGINNER | INTERMEDIATE | ADVANCED | EXPERT
+  duration      Float
+  frameCount    Int
+  jointsCount   Int
+  jointNames    String   // JSON array stored as string
+  fps           Int      @default(30)
+  fileUrl       String?  // Original uploaded file path (cold storage)
+  thumbnailUrl  String?
+  tags          String   @default("[]") // JSON array
+  isPublic      Boolean  @default(false)
+  relevantBodyParts String? // JSON array of BodyPartId, e.g. ["left_arm","right_arm","torso"]
+  courseId      String?
+  course        Course?  @relation(fields: [courseId], references: [id])
+  teacherId     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  frames      StandardMotionFrame[]
+  assessments AssessmentSession[]
+
+  @@index([category])
+  @@index([teacherId])
+}
+
+model StandardMotionFrame {
+  id               String @id @default(cuid())
+  standardMotionId String
+  frameIndex       Int
+  timestamp        Float
+  joints           String // JSON: [{ id, pos: {x,y,z}, rot?: {x,y,z,w}, confidence }]
+
+  standardMotion StandardMotion @relation(fields: [standardMotionId], references: [id], onDelete: Cascade)
+
+  @@index([standardMotionId, frameIndex])
+}
+
+// ─── Assessment Sessions ──────────────────────────────────────────
+
+model AssessmentSession {
+  id               String   @id @default(cuid())
+  name             String?
+  studentId        String
+  standardMotionId String
+  status           String   @default("IN_PROGRESS")
+  startedAt        DateTime @default(now())
+  completedAt      DateTime?
+  duration         Float?
+
+  // Configuration snapshot
+  selectedBodyParts  String? // JSON array
+  scoringRatios      String? // JSON object
+  rhythmEnabled      Boolean @default(true)
+  autoCaptureEnabled Boolean @default(true)
+  configNotes        String?
+
+  student          User                @relation(fields: [studentId], references: [id])
+  standardMotion   StandardMotion      @relation(fields: [standardMotionId], references: [id])
+  userMotionFrames UserMotionFrame[]
+  result           AssessmentResult?
+  reports          Report[]
+
+  @@index([studentId])
+  @@index([standardMotionId])
+  @@index([status])
+}
+
+model UserMotionFrame {
+  id         String  @id @default(cuid())
+  sessionId  String
+  frameIndex Int
+  timestamp  Float
+  deviceInfo String?
+  joints     String  // JSON: same structure as StandardMotionFrame.joints
+
+  session AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, frameIndex])
+}
+
+// ─── Assessment Results ───────────────────────────────────────────
+
+model AssessmentResult {
+  id        String   @id @default(cuid())
+  sessionId String   @unique
+  createdAt DateTime @default(now())
+
+  overallScore Float
+
+  // 11 indicators
+  accuracyScore      Float
+  rhythmScore        Float
+  fluidityScore      Float
+  explosivenessScore Float
+  extensionScore     Float
+  symmetryScore      Float
+  stabilityScore     Float
+  coordinationScore  Float
+  syncRateScore      Float
+  rangeOfMotionScore Float
+  completenessScore  Float
+
+  // Detailed data
+  jointDeviations    String // JSON
+  temporalDeviations String // JSON
+  frameScores        String // JSON
+
+  // Feedback
+  feedbackItems       String // JSON
+  trainingSuggestions String // JSON
+
+  // Metadata
+  indicatorWeights   String // JSON
+  analysisDurationMs Int
+  scoringVersion     String @default("1.0.0")
+
+  session AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// ─── Reports ──────────────────────────────────────────────────────
+
+model Report {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  assessmentId String
+  format       String   @default("pdf")
+  fileUrl      String?
+  fileSize     Int?
+  templateId   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assessment AssessmentSession @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+}
+
+// ─── System Config ────────────────────────────────────────────────
+
+model SystemConfig {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String // JSON
+
+  @@map("system_config")
+}
