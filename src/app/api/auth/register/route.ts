@@ -49,9 +49,10 @@ export async function POST(req: Request) {
       role: user.role,
     });
   } catch (error) {
-    console.error("Registration error:", error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Registration error:", msg);
     return NextResponse.json(
-      { error: "注册失败，请稍后重试" },
+      { error: msg },
       { status: 500 }
     );
   }
