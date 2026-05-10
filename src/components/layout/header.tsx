@@ -36,7 +36,7 @@ export function Header() {
           <Menu className="h-5 w-5" />
         </SheetTrigger>
         <SheetContent side="left" className="w-60 p-0">
-          <Sidebar />
+          <Sidebar variant="sheet" />
         </SheetContent>
       </Sheet>
 

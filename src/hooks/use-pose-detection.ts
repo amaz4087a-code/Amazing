@@ -44,18 +44,37 @@ export function usePoseDetection(options: UsePoseDetectionOptions = {}) {
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17/wasm",
         );
 
-        const poseDetector = await PoseLandmarker.createFromOptions(wasmFileset, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO" as const,
-          numPoses: 1,
-          minPoseDetectionConfidence: minDetectionConfidence,
-          minPosePresenceConfidence: minDetectionConfidence,
-          minTrackingConfidence: minTrackingConfidence,
-        });
+        // Try GPU first, fallback to CPU for mobile browsers without WebGL 2.0
+        let poseDetector: any;
+        try {
+          poseDetector = await PoseLandmarker.createFromOptions(wasmFileset, {
+            baseOptions: {
+              modelAssetPath:
+                "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+              delegate: "GPU",
+            },
+            runningMode: "VIDEO" as const,
+            numPoses: 1,
+            minPoseDetectionConfidence: minDetectionConfidence,
+            minPosePresenceConfidence: minDetectionConfidence,
+            minTrackingConfidence: minTrackingConfidence,
+          });
+        } catch {
+          // GPU failed, retry with CPU (common on mobile)
+          console.warn("GPU delegate failed, falling back to CPU");
+          poseDetector = await PoseLandmarker.createFromOptions(wasmFileset, {
+            baseOptions: {
+              modelAssetPath:
+                "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+              delegate: "CPU",
+            },
+            runningMode: "VIDEO" as const,
+            numPoses: 1,
+            minPoseDetectionConfidence: minDetectionConfidence,
+            minPosePresenceConfidence: minDetectionConfidence,
+            minTrackingConfidence: minTrackingConfidence,
+          });
+        }
 
         if (!cancelled) {
           detectorRef.current = poseDetector;
@@ -79,21 +98,46 @@ export function usePoseDetection(options: UsePoseDetectionOptions = {}) {
   const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, facingMode: "user" },
+        video: {
+          width: { ideal: 640, max: 1280 },
+          height: { ideal: 480, max: 720 },
+          facingMode: "user",
+        },
       });
 
       const video = document.createElement("video");
       video.srcObject = stream;
+      video.playsInline = true;
+      video.muted = true;
       video.setAttribute("playsinline", "");
+      video.setAttribute("muted", "");
       video.width = 640;
       video.height = 480;
+      video.style.display = "none";
+      document.body.appendChild(video);
       await video.play();
 
       videoRef.current = video;
       streamRef.current = stream;
       return true;
-    } catch {
-      setError("无法访问摄像头，请检查权限");
+    } catch (err) {
+      const e = err as DOMException;
+      switch (e.name) {
+        case "NotAllowedError":
+          setError("请在浏览器设置中允许摄像头权限");
+          break;
+        case "NotFoundError":
+          setError("未检测到摄像头设备");
+          break;
+        case "NotReadableError":
+          setError("摄像头被其他应用占用，请关闭后重试");
+          break;
+        case "OverconstrainedError":
+          setError("当前设备不支持所选摄像头参数");
+          break;
+        default:
+          setError("无法访问摄像头，请检查权限");
+      }
       return false;
     }
   }, []);
@@ -107,7 +151,12 @@ export function usePoseDetection(options: UsePoseDetectionOptions = {}) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    videoRef.current = null;
+    if (videoRef.current) {
+      if (videoRef.current.parentNode) {
+        videoRef.current.parentNode.removeChild(videoRef.current);
+      }
+      videoRef.current = null;
+    }
   }, []);
 
   // ─── Detect loop ───────────────────────────────────────────────────

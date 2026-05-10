@@ -113,6 +113,10 @@ export function LiveAssessmentView({
       const ok = await pose.startCamera();
       if (ok) {
         streamRef.current = pose.streamRef.current;
+        // Attach stream to display video synchronously (avoids race on mobile)
+        if (displayVideoRef.current && streamRef.current) {
+          displayVideoRef.current.srcObject = streamRef.current;
+        }
         setCameraOn(true);
         // Detection starts after a brief moment for camera warm-up
         setTimeout(() => pose.startDetection(), 300);

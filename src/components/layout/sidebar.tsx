@@ -29,7 +29,7 @@ const ROLE_LABELS: Record<string, string> = {
   STUDENT: "学生",
 };
 
-export function Sidebar() {
+export function Sidebar({ variant = "desktop" }: { variant?: "desktop" | "sheet" }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const user = session?.user;
@@ -37,7 +37,7 @@ export function Sidebar() {
   const roleLabel = ROLE_LABELS[role ?? ""] ?? "用户";
 
   return (
-    <aside className="hidden w-60 flex-col bg-sidebar text-sidebar-foreground md:flex">
+    <aside className={cn(variant === "desktop" ? "hidden md:flex" : "flex", "w-60 flex-col bg-sidebar text-sidebar-foreground")}>
       {/* Logo */}
       <div className="flex h-16 items-center gap-1.5 border-b border-sidebar-border px-6">
         <span className="text-2xl font-extrabold tracking-tight text-primary">
